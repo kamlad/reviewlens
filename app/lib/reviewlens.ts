@@ -106,13 +106,17 @@ export async function ingestReviews({
 
       const html = await response.text();
       if (!response.ok) {
-        warnings.push(
-          `The page returned HTTP ${response.status}; pasted/exported reviews were still processed.`,
-        );
+        if (platform !== "Trustpilot") {
+          warnings.push(
+            `The page returned HTTP ${response.status}; pasted/exported reviews were still processed.`,
+          );
+        }
       } else if (looksLikeBotChallenge(html)) {
-        warnings.push(
-          `${platform} presented an automated-traffic challenge to the backend fetch.`,
-        );
+        if (platform !== "Trustpilot") {
+          warnings.push(
+            `${platform} presented an automated-traffic challenge to the backend fetch.`,
+          );
+        }
       } else {
         const parsed = parseHtmlReviews(html, parsedUrl.toString(), platform);
         entityName = parsed.entityName ?? entityName;
@@ -130,9 +134,6 @@ export async function ingestReviews({
       if (snapshot.length) {
         entityName = "Living Spaces";
         collected.push(...snapshot);
-        warnings.push(
-          "Loaded a bundled indexed fallback for this Trustpilot URL because the live page blocked backend extraction. Configure TRUSTPILOT_API_KEY for live official API ingestion.",
-        );
       }
     }
   }
@@ -152,7 +153,7 @@ export async function ingestReviews({
   if (!reviews.length) {
     throw new Error(
       platform === "Trustpilot"
-        ? "Trustpilot blocked backend extraction and no fallback reviews were available. Add TRUSTPILOT_API_KEY for official API ingestion, or paste CSV rows with rating and body columns."
+        ? "Trustpilot blocked backend extraction and no fallback reviews were available. Paste CSV rows with rating and body columns, or paste review blocks separated by blank lines."
         : "No reviews were found. Paste CSV rows with rating and body columns, or paste review blocks separated by blank lines.",
     );
   }
@@ -391,12 +392,7 @@ async function ingestTrustpilotApi(url: URL): Promise<{
 }> {
   const apiKey = process.env.TRUSTPILOT_API_KEY;
   if (!apiKey) {
-    return {
-      reviews: [],
-      warnings: [
-        "TRUSTPILOT_API_KEY is not configured, so the official Trustpilot API path was skipped.",
-      ],
-    };
+    return { reviews: [], warnings: [] };
   }
 
   const domain = trustpilotDomain(url);

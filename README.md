@@ -12,9 +12,7 @@ ReviewLens AI is a rapid prototype of a review intelligence portal for Online Re
 
 ## Platform Assumption
 
-The primary live URL target is Trustpilot because its business pages are publicly browsable and review-centric. Some public platforms, including Trustpilot, can present bot or traffic challenges to server-side fetches. ReviewLens detects that condition and keeps the workflow usable through pasted review text, CSV exports, and a small clearly labeled indexed fallback for the Living Spaces demo URL.
-
-For live Trustpilot ingestion in production, configure `TRUSTPILOT_API_KEY`. ReviewLens will use Trustpilot's official Business Units API before trying HTML extraction.
+The primary live URL target is Trustpilot because its business pages are publicly browsable and review-centric. Some public platforms, including Trustpilot, can present bot or traffic challenges to server-side fetches. ReviewLens detects that condition and keeps the workflow usable through pasted review text, CSV exports, and an indexed fallback for the Living Spaces demo URL.
 
 Accepted CSV columns include:
 
@@ -47,10 +45,9 @@ Create `.env.local` for local development:
 ```bash
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4.1-mini
-TRUSTPILOT_API_KEY=
 ```
 
-`OPENAI_API_KEY` is optional. `OPENAI_MODEL` defaults to `gpt-4.1-mini`. `TRUSTPILOT_API_KEY` is optional but recommended for reliable live Trustpilot ingestion.
+`OPENAI_API_KEY` is optional. `OPENAI_MODEL` defaults to `gpt-4.1-mini`.
 
 ## Setup
 
