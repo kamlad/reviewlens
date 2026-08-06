@@ -43,6 +43,8 @@ const STOPWORDS = new Set([
   "over",
   "really",
   "review",
+  "reviewer",
+  "said",
   "service",
   "some",
   "than",
@@ -230,6 +232,17 @@ export function summarizeDataset({
 
 export function retrieveEvidence(question: string, reviews: Review[], limit = 8) {
   const queryTerms = tokens(question);
+  if (isBroadPainPointQuestion(question)) {
+    return [...reviews]
+      .sort(
+        (a, b) =>
+          (a.rating ?? 3) - (b.rating ?? 3) ||
+          (b.body.length + (b.title?.length ?? 0)) -
+            (a.body.length + (a.title?.length ?? 0)),
+      )
+      .slice(0, limit);
+  }
+
   const scored = reviews
     .map((review) => {
       const text = `${review.title ?? ""} ${review.body}`.toLowerCase();
@@ -244,6 +257,12 @@ export function retrieveEvidence(question: string, reviews: Review[], limit = 8)
   const directMatches = scored.filter((item) => item.score > 0).slice(0, limit);
   return (directMatches.length ? directMatches : scored.slice(0, limit)).map(
     (item) => item.review,
+  );
+}
+
+function isBroadPainPointQuestion(question: string) {
+  return /\b(pain points?|complaints?|issues?|problems?|negative|negatives|biggest|top|worst|risks?|friction|dissatisfaction)\b/i.test(
+    question,
   );
 }
 
