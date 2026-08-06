@@ -13,6 +13,11 @@ export type Dataset = {
   platform: string;
   entityName: string;
   reviewCount: number;
+  ingestionStats: {
+    scanned: number;
+    succeeded: number;
+    failed: number;
+  };
   averageRating: number | null;
   ratingDistribution: Record<string, number>;
   dateRange: { earliest: string | null; latest: string | null };
@@ -73,6 +78,7 @@ export async function ingestReviews({
 }): Promise<Dataset> {
   const warnings: string[] = [];
   const collected: Review[] = [];
+  let scannedCount = 0;
   let entityName = "Imported review set";
   let platform = "Imported data";
 
@@ -88,6 +94,7 @@ export async function ingestReviews({
       if (apiResult.reviews.length) {
         entityName = apiResult.entityName ?? entityName;
         collected.push(...apiResult.reviews);
+        scannedCount += apiResult.reviews.length;
         warnings.push(...apiResult.warnings);
       } else {
         warnings.push(...apiResult.warnings);
@@ -121,6 +128,7 @@ export async function ingestReviews({
         const parsed = parseHtmlReviews(html, parsedUrl.toString(), platform);
         entityName = parsed.entityName ?? entityName;
         collected.push(...parsed.reviews);
+        scannedCount += parsed.reviews.length;
         warnings.push(...parsed.warnings);
       }
     } catch {
@@ -134,11 +142,13 @@ export async function ingestReviews({
       if (snapshot.length) {
         entityName = "Living Spaces";
         collected.push(...snapshot);
+        scannedCount += snapshot.length;
       }
     }
   }
 
   if (rawReviews?.trim()) {
+    scannedCount += countImportedCandidates(rawReviews);
     const imported = parseImportedReviews(rawReviews, url);
     collected.push(...imported);
   }
@@ -175,6 +185,11 @@ export async function ingestReviews({
         : inferEntityName(url, rawReviews) ?? entityName,
     reviews,
     warnings,
+    ingestionStats: {
+      scanned: scannedCount || reviews.length,
+      succeeded: reviews.length,
+      failed: Math.max(0, (scannedCount || reviews.length) - reviews.length),
+    },
   });
 }
 
@@ -184,12 +199,14 @@ export function summarizeDataset({
   entityName,
   reviews,
   warnings,
+  ingestionStats,
 }: {
   sourceUrl?: string;
   platform: string;
   entityName: string;
   reviews: Review[];
   warnings: string[];
+  ingestionStats?: Dataset["ingestionStats"];
 }): Dataset {
   const ratings = reviews
     .map((review) => review.rating)
@@ -217,6 +234,11 @@ export function summarizeDataset({
     platform,
     entityName,
     reviewCount: reviews.length,
+    ingestionStats: ingestionStats ?? {
+      scanned: reviews.length,
+      succeeded: reviews.length,
+      failed: 0,
+    },
     averageRating: ratings.length
       ? ratings.reduce((total, rating) => total + rating, 0) / ratings.length
       : null,
@@ -648,6 +670,17 @@ function trustpilotIndexedSnapshot(url: URL): Review[] {
       sourceUrl,
     },
   ];
+}
+
+function countImportedCandidates(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return 0;
+  if (looksLikeCsv(trimmed)) {
+    const rows = csvRows(trimmed);
+    return Math.max(0, rows.length - 1);
+  }
+  return trimmed.split(/\n\s*\n+/).filter((block) => cleanText(block).length > 0)
+    .length;
 }
 
 function parseImportedReviews(raw: string, sourceUrl?: string) {

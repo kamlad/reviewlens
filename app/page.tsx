@@ -17,6 +17,11 @@ type IngestionSummary = {
   platform: string;
   entityName: string;
   reviewCount: number;
+  ingestionStats: {
+    scanned: number;
+    succeeded: number;
+    failed: number;
+  };
   averageRating: number | null;
   ratingDistribution: Record<string, number>;
   dateRange: { earliest: string | null; latest: string | null };
@@ -219,8 +224,19 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <Metric label="Reviews" value={dataset?.reviewCount ?? 0} />
+            <div className="summary-metrics mt-5">
+              <Metric
+                label="Scanned"
+                value={dataset?.ingestionStats.scanned ?? 0}
+              />
+              <Metric
+                label="Ingested"
+                value={dataset?.ingestionStats.succeeded ?? 0}
+              />
+              <Metric
+                label="Failed"
+                value={dataset?.ingestionStats.failed ?? 0}
+              />
               <Metric
                 label="Earliest"
                 value={dataset?.dateRange.earliest ?? "-"}
@@ -272,9 +288,16 @@ export default function Home() {
             ) : null}
 
             <div className="mt-6">
-              <h3 className="subhead">Evidence Preview</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="subhead">Evidence Preview</h3>
+                {dataset ? (
+                  <span className="text-xs font-semibold text-[#68635a]">
+                    Showing all {dataset.reviews.length} reviews
+                  </span>
+                ) : null}
+              </div>
               <div className="mt-3 grid max-h-[390px] gap-3 overflow-auto pr-1">
-                {(dataset?.reviews ?? []).slice(0, 10).map((review) => (
+                {(dataset?.reviews ?? []).map((review) => (
                   <article key={review.id} className="review-row">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="review-id">{review.id}</span>
@@ -353,10 +376,14 @@ export default function Home() {
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {
+  const isDate = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
   return (
     <div className="metric-box">
       <p className="metric-label">{label}</p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
+      <p className={isDate ? "metric-value metric-value-date" : "metric-value"}>
+        {value}
+      </p>
     </div>
   );
 }
