@@ -7,18 +7,20 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       url?: string;
+      urls?: string[];
       rawReviews?: string;
     };
 
-    if (!body.url?.trim() && !body.rawReviews?.trim()) {
+    const urls = normalizeUrls(body.urls, body.url);
+    if (!urls.length && !body.rawReviews?.trim()) {
       return NextResponse.json(
-        { error: "Provide a public review URL or pasted review data." },
+        { error: "Provide one or more public review URLs or pasted review data." },
         { status: 400 },
       );
     }
 
     const dataset = await ingestReviews({
-      url: body.url?.trim(),
+      urls,
       rawReviews: body.rawReviews,
     });
 
@@ -32,4 +34,11 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+}
+
+function normalizeUrls(urls?: string[], url?: string) {
+  return [...(urls ?? []), url ?? ""]
+    .flatMap((item) => item.split(/[\n,]+/))
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

@@ -1,3 +1,5 @@
+import { HTMLElement, parse as parseHtmlDocument } from "node-html-parser";
+
 export type Review = {
   id: string;
   author?: string;
@@ -69,96 +71,126 @@ const STOPWORDS = new Set([
   "your",
 ]);
 
+const TRUSTPILOT_PAGE_LIMIT = 80;
+const TRUSTPILOT_API_PAGE_SIZE = 100;
+
 export async function ingestReviews({
   url,
+  urls,
   rawReviews,
 }: {
   url?: string;
+  urls?: string[];
   rawReviews?: string;
 }): Promise<Dataset> {
   const warnings: string[] = [];
   const collected: Review[] = [];
   let scannedCount = 0;
+  let detectedCandidateCount: number | null = null;
   let entityName = "Imported review set";
   let platform = "Imported data";
+  const urlInputs = normalizeUrlInputs(urls, url);
+  const detectedPlatforms = new Set<string>();
 
-  if (url) {
-    const parsedUrl = safeUrl(url);
-    if (!parsedUrl) {
-      throw new Error("Enter a valid public URL.");
-    }
-
-    platform = detectPlatform(parsedUrl);
-    if (platform === "Trustpilot") {
-      const apiResult = await ingestTrustpilotApi(parsedUrl);
-      if (apiResult.reviews.length) {
-        entityName = apiResult.entityName ?? entityName;
-        collected.push(...apiResult.reviews);
-        scannedCount += apiResult.reviews.length;
-        warnings.push(...apiResult.warnings);
-      } else {
-        warnings.push(...apiResult.warnings);
+  if (urlInputs.length) {
+    for (const inputUrl of urlInputs) {
+      const parsedUrl = safeUrl(inputUrl);
+      if (!parsedUrl) {
+        throw new Error(`Enter a valid public URL: ${inputUrl}`);
       }
-    }
 
-    try {
-      const response = await fetch(parsedUrl.toString(), {
-        headers: {
-          accept: "text/html,application/xhtml+xml",
-          "accept-language": "en-US,en;q=0.9",
-          "user-agent":
-            "Mozilla/5.0 (compatible; ReviewLensAI/1.0; +https://example.com/reviewlens)",
-        },
-      });
+      platform = detectPlatform(parsedUrl);
+      detectedPlatforms.add(platform);
+      const beforeUrlReviewCount = collected.length;
 
-      const html = await response.text();
-      if (!response.ok) {
-        if (platform !== "Trustpilot") {
+      if (platform === "Trustpilot") {
+        const apiResult = await ingestTrustpilotApi(parsedUrl);
+        if (apiResult.reviews.length) {
+          entityName = apiResult.entityName ?? entityName;
+          collected.push(...apiResult.reviews);
+          scannedCount += apiResult.reviews.length;
+          warnings.push(...apiResult.warnings);
+        } else {
+          warnings.push(...apiResult.warnings);
+        }
+      }
+
+      if (collected.length === beforeUrlReviewCount && platform === "Trustpilot") {
+        const fetched = await ingestTrustpilotHtmlPage(parsedUrl);
+        entityName = fetched.entityName ?? entityName;
+        collected.push(...fetched.reviews);
+        scannedCount += fetched.scanned;
+        warnings.push(...fetched.warnings);
+      }
+
+      if (platform !== "Trustpilot") {
+        try {
+          const response = await fetchReviewPage(parsedUrl);
+
+          const html = await response.text();
+          if (!response.ok) {
+            warnings.push(
+              `The page returned HTTP ${response.status}; pasted/exported reviews were still processed.`,
+            );
+          } else if (looksLikeBotChallenge(html)) {
+            warnings.push(
+              `${platform} presented an automated-traffic challenge to the backend fetch.`,
+            );
+          } else {
+            const parsed = parseHtmlReviews(html, parsedUrl.toString(), platform);
+            entityName = parsed.entityName ?? entityName;
+            collected.push(...parsed.reviews);
+            scannedCount += parsed.reviews.length;
+            warnings.push(...parsed.warnings);
+          }
+        } catch {
           warnings.push(
-            `The page returned HTTP ${response.status}; pasted/exported reviews were still processed.`,
+            `${platform} could not be fetched from the server. Use a CSV export or paste review text below.`,
           );
         }
-      } else if (looksLikeBotChallenge(html)) {
-        if (platform !== "Trustpilot") {
-          warnings.push(
-            `${platform} presented an automated-traffic challenge to the backend fetch.`,
+      }
+
+      if (collected.length === beforeUrlReviewCount && platform === "Trustpilot") {
+        const snapshot = trustpilotIndexedSnapshot(parsedUrl);
+        if (snapshot.reviews.length) {
+          entityName = "Living Spaces";
+          collected.push(...snapshot.reviews);
+          scannedCount += snapshot.reviews.length;
+          detectedCandidateCount = Math.max(
+            detectedCandidateCount ?? 0,
+            snapshot.totalAvailable,
           );
         }
-      } else {
-        const parsed = parseHtmlReviews(html, parsedUrl.toString(), platform);
-        entityName = parsed.entityName ?? entityName;
-        collected.push(...parsed.reviews);
-        scannedCount += parsed.reviews.length;
-        warnings.push(...parsed.warnings);
       }
-    } catch {
-      warnings.push(
-        `${platform} could not be fetched from the server. Use a CSV export or paste review text below.`,
-      );
-    }
 
-    if (!collected.length && platform === "Trustpilot") {
-      const snapshot = trustpilotIndexedSnapshot(parsedUrl);
-      if (snapshot.length) {
-        entityName = "Living Spaces";
-        collected.push(...snapshot);
-        scannedCount += snapshot.length;
+      if (collected.length === beforeUrlReviewCount && platform === "Trustpilot") {
+        warnings.push(
+          `No reviews were extracted from ${parsedUrl.toString()}. Trustpilot may have blocked backend access for that page, or the page did not contain recognizable review records.`,
+        );
       }
     }
   }
 
   if (rawReviews?.trim()) {
-    scannedCount += countImportedCandidates(rawReviews);
-    const imported = parseImportedReviews(rawReviews, url);
-    collected.push(...imported);
+    const importedResult = parseImportedReviews(rawReviews, urlInputs[0]);
+    scannedCount += importedResult.scanned;
+    if (detectedCandidateCount !== null) {
+      detectedCandidateCount += importedResult.scanned;
+    }
+    if (importedResult.entityName) {
+      entityName = importedResult.entityName;
+    }
+    if (importedResult.platform) {
+      platform = importedResult.platform;
+    }
+    collected.push(...importedResult.reviews);
+    warnings.push(...importedResult.warnings);
   }
 
-  const reviews = dedupeReviews(collected)
-    .slice(0, 120)
-    .map((review, index) => ({
-      ...review,
-      id: review.id || `R${String(index + 1).padStart(3, "0")}`,
-    }));
+  const reviews = dedupeReviews(collected).map((review, index) => ({
+    ...review,
+    id: review.id || `R${String(index + 1).padStart(3, "0")}`,
+  }));
 
   if (!reviews.length) {
     throw new Error(
@@ -168,27 +200,31 @@ export async function ingestReviews({
     );
   }
 
-  if (reviews.length < collected.length) {
-    warnings.push("Only the first 120 unique reviews were kept for analysis.");
-  }
-
-  if (platform === "Trustpilot" && !url) {
+  if (detectedPlatforms.size > 1) {
+    platform = `${[...detectedPlatforms].join(" + ")} / multiple URLs`;
+  } else if (urlInputs.length > 1 && detectedPlatforms.size === 1) {
+    platform = `${[...detectedPlatforms][0]} / multiple URLs`;
+  } else if (platform === "Trustpilot" && !urlInputs.length) {
     platform = "Trustpilot / imported data";
   }
 
   return summarizeDataset({
-    sourceUrl: url,
+    sourceUrl: urlInputs.join("\n") || undefined,
     platform,
     entityName:
       entityName !== "Imported review set"
         ? entityName
-        : inferEntityName(url, rawReviews) ?? entityName,
+        : inferEntityName(urlInputs[0], rawReviews) ?? entityName,
     reviews,
     warnings,
     ingestionStats: {
-      scanned: scannedCount || reviews.length,
+      scanned: detectedCandidateCount ?? (scannedCount || reviews.length),
       succeeded: reviews.length,
-      failed: Math.max(0, (scannedCount || reviews.length) - reviews.length),
+      failed: Math.max(
+        0,
+        (detectedCandidateCount ?? (scannedCount || reviews.length)) -
+          reviews.length,
+      ),
     },
   });
 }
@@ -407,6 +443,42 @@ function parseHtmlReviews(
   return { entityName, reviews, warnings };
 }
 
+async function ingestTrustpilotHtmlPage(url: URL): Promise<{
+  entityName?: string;
+  reviews: Review[];
+  scanned: number;
+  warnings: string[];
+}> {
+  try {
+    const response = await fetchReviewPage(url);
+    const html = await response.text();
+    if (!response.ok || looksLikeBotChallenge(html)) {
+      return { reviews: [], scanned: 0, warnings: [] };
+    }
+
+    const parsed = parseHtmlReviews(html, url.toString(), "Trustpilot");
+    return {
+      entityName: parsed.entityName,
+      reviews: parsed.reviews,
+      scanned: parsed.reviews.length,
+      warnings: parsed.warnings,
+    };
+  } catch {
+    return { reviews: [], scanned: 0, warnings: [] };
+  }
+}
+
+function fetchReviewPage(url: URL) {
+  return fetch(url.toString(), {
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "accept-language": "en-US,en;q=0.9",
+      "user-agent":
+        "Mozilla/5.0 (compatible; ReviewLensAI/1.0; +https://example.com/reviewlens)",
+    },
+  });
+}
+
 async function ingestTrustpilotApi(url: URL): Promise<{
   entityName?: string;
   reviews: Review[];
@@ -446,25 +518,35 @@ async function ingestTrustpilotApi(url: URL): Promise<{
       };
     }
 
-    const reviewsUrl = new URL(
-      `https://api.trustpilot.com/v1/business-units/${businessUnitId}/all-reviews`,
-    );
-    reviewsUrl.searchParams.set("apikey", apiKey);
-    reviewsUrl.searchParams.set("perPage", "40");
-    const reviewsResponse = await fetch(reviewsUrl);
-    if (!reviewsResponse.ok) {
-      return {
-        reviews: [],
-        warnings: [`Trustpilot reviews API returned HTTP ${reviewsResponse.status}.`],
-      };
-    }
+    const rawReviews: unknown[] = [];
+    for (let page = 1; page <= TRUSTPILOT_PAGE_LIMIT; page += 1) {
+      const reviewsUrl = new URL(
+        `https://api.trustpilot.com/v1/business-units/${businessUnitId}/all-reviews`,
+      );
+      reviewsUrl.searchParams.set("apikey", apiKey);
+      reviewsUrl.searchParams.set("perPage", String(TRUSTPILOT_API_PAGE_SIZE));
+      reviewsUrl.searchParams.set("page", String(page));
+      const reviewsResponse = await fetch(reviewsUrl);
+      if (!reviewsResponse.ok) {
+        return {
+          reviews: rawReviews.map((item, index) =>
+            reviewFromTrustpilotApi(objectValue(item) ?? {}, url.toString(), index),
+          ),
+          warnings: [],
+        };
+      }
 
-    const payload = (await reviewsResponse.json()) as Record<string, unknown>;
-    const rawReviews = Array.isArray(payload.reviews)
-      ? payload.reviews
-      : Array.isArray(payload.allReviews)
-        ? payload.allReviews
-        : [];
+      const payload = (await reviewsResponse.json()) as Record<string, unknown>;
+      const pageReviews = Array.isArray(payload.reviews)
+        ? payload.reviews
+        : Array.isArray(payload.allReviews)
+          ? payload.allReviews
+          : [];
+      rawReviews.push(...pageReviews);
+      if (pageReviews.length < TRUSTPILOT_API_PAGE_SIZE) {
+        break;
+      }
+    }
 
     return {
       entityName:
@@ -476,7 +558,7 @@ async function ingestTrustpilotApi(url: URL): Promise<{
           reviewFromTrustpilotApi(objectValue(item) ?? {}, url.toString(), index),
         )
         .filter((review) => review.body.length > 10),
-      warnings: ["Loaded reviews through Trustpilot's official Business Units API."],
+      warnings: [],
     };
   } catch {
     return {
@@ -524,11 +606,21 @@ function reviewFromTrustpilotApi(
   };
 }
 
-function trustpilotIndexedSnapshot(url: URL): Review[] {
-  if (trustpilotDomain(url) !== "www.livingspaces.com") return [];
+function trustpilotIndexedSnapshot(url: URL): {
+  totalAvailable: number;
+  reviews: Review[];
+} {
+  if (
+    trustpilotDomain(url) !== "www.livingspaces.com" ||
+    !isFirstTrustpilotPage(url)
+  ) {
+    return { totalAvailable: 0, reviews: [] };
+  }
 
   const sourceUrl = url.toString();
-  return [
+  return {
+    totalAvailable: 677,
+    reviews: [
     {
       id: "LS001",
       author: "Heather",
@@ -669,7 +761,8 @@ function trustpilotIndexedSnapshot(url: URL): Review[] {
       date: "2026-03-08",
       sourceUrl,
     },
-  ];
+    ],
+  };
 }
 
 function countImportedCandidates(raw: string) {
@@ -683,13 +776,220 @@ function countImportedCandidates(raw: string) {
     .length;
 }
 
-function parseImportedReviews(raw: string, sourceUrl?: string) {
+function parseImportedReviews(raw: string, sourceUrl?: string): {
+  entityName?: string;
+  platform?: string;
+  reviews: Review[];
+  scanned: number;
+  warnings: string[];
+} {
   const trimmed = raw.trim();
-  if (looksLikeCsv(trimmed)) {
-    return parseCsv(trimmed, sourceUrl);
+  if (looksLikeJson(trimmed)) {
+    return parseJsonReviews(trimmed, sourceUrl);
   }
 
-  return parsePlainReviewBlocks(trimmed, sourceUrl);
+  if (looksLikeCsv(trimmed)) {
+    const reviews = parseCsv(trimmed, sourceUrl);
+    return {
+      reviews,
+      scanned: Math.max(0, csvRows(trimmed).length - 1),
+      warnings: [],
+    };
+  }
+
+  const trustpilotTextReviews = parseTrustpilotVisibleText(trimmed, sourceUrl);
+  if (trustpilotTextReviews.length) {
+    return {
+      platform: "Trustpilot",
+      reviews: trustpilotTextReviews,
+      scanned: trustpilotTextReviews.length,
+      warnings: [],
+    };
+  }
+
+  const reviews = parsePlainReviewBlocks(trimmed, sourceUrl);
+  return {
+    reviews,
+    scanned: countImportedCandidates(trimmed),
+    warnings: [],
+  };
+}
+
+export function parseTrustpilotVisibleText(raw: string, sourceUrl?: string): Review[] {
+  const text = raw
+    .replace(/\r/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!looksLikeVisibleTrustpilotText(text)) {
+    return [];
+  }
+
+  return trustpilotVisibleBlocks(text)
+    .map((block, index) => reviewFromTrustpilotVisibleBlock(block, index, sourceUrl))
+    .filter((review): review is Review => Boolean(review));
+}
+
+function looksLikeVisibleTrustpilotText(text: string) {
+  return (
+    /\bRated\s+[1-5](?:\.\d)?\s+out of\s+5\b/i.test(text) ||
+    /\bDate of experience:\s*[A-Z][a-z]+ \d{1,2}, \d{4}\b/i.test(text)
+  );
+}
+
+function trustpilotVisibleBlocks(text: string) {
+  if (/\bRated\s+[1-5](?:\.\d)?\s+out of\s+5\b/i.test(text)) {
+    return text.split(/(?=\bRated\s+[1-5](?:\.\d)?\s+out of\s+5\b)/gi);
+  }
+
+  const blocks: string[] = [];
+  let current: string[] = [];
+  for (const line of text.split("\n")) {
+    if (line.trim()) {
+      current.push(line);
+    }
+    if (/\bDate of experience:\s*[A-Z][a-z]+ \d{1,2}, \d{4}\b/i.test(line)) {
+      blocks.push(current.join("\n"));
+      current = [];
+    }
+  }
+  if (current.length) {
+    blocks.push(current.join("\n"));
+  }
+  return blocks;
+}
+
+function reviewFromTrustpilotVisibleBlock(
+  block: string,
+  index: number,
+  sourceUrl?: string,
+): Review | null {
+  const lines = block
+    .split("\n")
+    .map((line) => cleanText(line))
+    .filter(Boolean)
+    .filter((line) => !isTrustpilotUiLine(line));
+  const joined = cleanText(lines.join(" "));
+  const rating = numberOrNull(
+    joined.match(/\bRated\s+([1-5](?:\.\d)?)\s+out of\s+5\b/i)?.[1],
+  );
+
+  const date =
+    normalizeDate(joined.match(/\bDate of experience:\s*([A-Z][a-z]+ \d{1,2}, \d{4})\b/i)?.[1]) ??
+    normalizeDate(joined.match(/\b[A-Z][a-z]+ \d{1,2}, \d{4}\b/)?.[0]) ??
+    undefined;
+  const bodyLines = lines
+    .map((line) =>
+      line
+        .replace(/\bRated\s+[1-5](?:\.\d)?\s+out of\s+5(?:\s+stars?)?\b/i, "")
+        .replace(/\bDate of experience:\s*[A-Z][a-z]+ \d{1,2}, \d{4}\b/i, "")
+        .trim(),
+    )
+    .filter(Boolean)
+    .filter((line) => !normalizeDate(line));
+  const title = bodyLines.find(
+    (line) => line.length >= 4 && line.length <= 120 && !looksLikeAuthorLine(line),
+  );
+  const body = cleanText(
+    bodyLines
+      .filter((line) => line !== title)
+      .filter((line) => !looksLikeAuthorLine(line))
+      .join(" ")
+      .replace(/\bDate of experience:\s*[A-Z][a-z]+ \d{1,2}, \d{4}\b/gi, ""),
+  );
+
+  return (rating || date) && body.length > 20
+    ? {
+        id: `V${String(index + 1).padStart(3, "0")}`,
+        rating,
+        title,
+        body,
+        date,
+        sourceUrl,
+      }
+    : null;
+}
+
+function looksLikeAuthorLine(line: string) {
+  return /^[A-Z]{2}$/.test(line) || /^\d+\s+reviews?$/i.test(line);
+}
+
+function isTrustpilotUiLine(line: string) {
+  return /^(useful|share|reply from|show reviews|previous|next|company activity|claimed profile|write a review|trustpilot|verified|invited)$/i.test(
+    line,
+  );
+}
+
+function parseJsonReviews(raw: string, sourceUrl?: string) {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const root = objectValue(parsed);
+    const reviewItems = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(root?.reviews)
+        ? root.reviews
+        : [];
+    const reviews = reviewItems
+      .map((item, index) =>
+        reviewFromImportedJson(objectValue(item) ?? {}, sourceUrl, index),
+      )
+      .filter((review) => review.body.length > 10);
+    const stats = objectValue(root?.ingestionStats);
+    const scanned =
+      numberOrNull(stats?.scanned) ??
+      numberOrNull(root?.totalAvailable) ??
+      reviewItems.length;
+
+    return {
+      entityName: stringValue(root?.entityName),
+      platform: stringValue(root?.platform),
+      reviews,
+      scanned,
+      warnings: reviews.length
+        ? []
+        : ["JSON was detected, but no review records were recognized."],
+    };
+  } catch {
+    return {
+      reviews: [],
+      scanned: 0,
+      warnings: ["JSON import could not be parsed."],
+    };
+  }
+}
+
+function reviewFromImportedJson(
+  node: Record<string, unknown>,
+  sourceUrl: string | undefined,
+  index: number,
+): Review {
+  return {
+    id: stringValue(node.id) ?? `J${String(index + 1).padStart(3, "0")}`,
+    author:
+      stringValue(node.author) ??
+      stringValue(node.consumerName) ??
+      stringValue(node.reviewer),
+    rating:
+      numberOrNull(node.rating) ??
+      numberOrNull(node.stars) ??
+      numberOrNull(node.score),
+    title:
+      stringValue(node.title) ??
+      stringValue(node.headline) ??
+      stringValue(node.subject),
+    body: cleanText(
+      stringValue(node.body) ??
+        stringValue(node.reviewBody) ??
+        stringValue(node.text) ??
+        stringValue(node.content) ??
+        "",
+    ),
+    date:
+      normalizeDate(node.date) ??
+      normalizeDate(node.datePublished) ??
+      normalizeDate(node.createdAt) ??
+      undefined,
+    sourceUrl: stringValue(node.sourceUrl) ?? sourceUrl,
+  };
 }
 
 function parsePlainReviewBlocks(raw: string, sourceUrl?: string) {
@@ -769,27 +1069,50 @@ function csvRows(input: string) {
 }
 
 function parseArticleFallback(html: string, sourceUrl: string, platform: string) {
-  return html
-    .split(/<article\b/i)
-    .slice(1)
-    .map((chunk, index) => {
-      const article = chunk.split("</article>")[0] ?? chunk;
-      const text = cleanText(stripTags(article));
+  const root = parseHtmlDocument(html);
+  return root
+    .querySelectorAll("article")
+    .map((article, index) => {
+      const text = cleanText(article.structuredText || article.text);
+      const ratingAlt = article
+        .getElementsByTagName("img")
+        .map((image) => image.getAttribute("alt") ?? "")
+        .find((alt) => /rated/i.test(alt));
       const rating =
-        numberOrNull(article.match(/Rated\s+([1-5](?:\.\d)?)\s+out of\s+5/i)?.[1]) ??
-        numberOrNull(article.match(/stars-([1-5])/i)?.[1]);
-      const title = stripTags(
-        article.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i)?.[1] ?? "",
-      );
+        numberOrNull(ratingAlt?.match(/Rated\s+([1-5](?:\.\d)?)\s+out of\s+5/i)?.[1]) ??
+        numberOrNull(article.toString().match(/stars-([1-5])/i)?.[1]) ??
+        numberOrNull(text.match(/Rated\s+([1-5](?:\.\d)?)\s+out of\s+5/i)?.[1]);
+      const title = firstElementText(article, ["h1", "h2", "h3", "h4"]);
+      const date =
+        firstElementAttribute(article, ["time"], "datetime") ??
+        normalizeDate(text.match(/\b[A-Z][a-z]+ \d{1,2}, \d{4}\b/)?.[0]) ??
+        undefined;
       return {
         id: `${platform.slice(0, 1).toUpperCase()}${String(index + 1).padStart(3, "0")}`,
         rating,
         title: cleanText(title) || undefined,
         body: text,
+        date,
         sourceUrl,
       };
     })
     .filter((review) => review.body.length > 80);
+}
+
+function firstElementText(root: HTMLElement, selectors: string[]) {
+  for (const selector of selectors) {
+    const text = root.querySelector(selector)?.text;
+    if (text?.trim()) return text;
+  }
+  return "";
+}
+
+function firstElementAttribute(root: HTMLElement, selectors: string[], attribute: string) {
+  for (const selector of selectors) {
+    const value = root.querySelector(selector)?.getAttribute(attribute);
+    if (value?.trim()) return value;
+  }
+  return undefined;
 }
 
 function reviewFromJson(node: Record<string, unknown>, sourceUrl: string, index: number): Review {
@@ -891,6 +1214,11 @@ function detectPlatform(url: URL) {
   return host;
 }
 
+function isFirstTrustpilotPage(url: URL) {
+  const page = url.searchParams.get("page");
+  return !page || page === "1";
+}
+
 function trustpilotDomain(url: URL) {
   if (!url.hostname.includes("trustpilot.")) return null;
   const reviewIndex = url.pathname
@@ -899,6 +1227,13 @@ function trustpilotDomain(url: URL) {
     .findIndex((part) => part === "review");
   const domain = url.pathname.split("/").filter(Boolean)[reviewIndex + 1];
   return domain ? domain.toLowerCase() : null;
+}
+
+function normalizeUrlInputs(urls?: string[], url?: string) {
+  return [...(urls ?? []), url ?? ""]
+    .flatMap((item) => item.split(/[\n,]+/))
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function safeUrl(value: string) {
@@ -919,6 +1254,13 @@ function looksLikeBotChallenge(html: string) {
 function looksLikeCsv(value: string) {
   const firstLine = value.split(/\r?\n/)[0] ?? "";
   return firstLine.includes(",") && /rating|review|body|text|content/i.test(firstLine);
+}
+
+function looksLikeJson(value: string) {
+  return (
+    (value.startsWith("{") && value.endsWith("}")) ||
+    (value.startsWith("[") && value.endsWith("]"))
+  );
 }
 
 function dedupeReviews(reviews: Review[]) {

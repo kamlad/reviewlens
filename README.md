@@ -4,7 +4,7 @@ ReviewLens AI is a rapid prototype of a review intelligence portal for Online Re
 
 ## Live Flow
 
-1. Paste a Trustpilot review URL, a CSV export, or review blocks separated by blank lines.
+1. Paste one or more Trustpilot review URLs, a CSV export, JSON review export, or review blocks separated by blank lines.
 2. Click **Ingest Reviews**.
 3. Inspect the ingestion summary: review count, rating mix, date range, recurring terms, warnings, and evidence preview.
 4. Ask questions in the Q&A panel.
@@ -12,13 +12,27 @@ ReviewLens AI is a rapid prototype of a review intelligence portal for Online Re
 
 ## Platform Assumption
 
-The primary live URL target is Trustpilot because its business pages are publicly browsable and review-centric. Some public platforms, including Trustpilot, can present bot or traffic challenges to server-side fetches. ReviewLens detects that condition and keeps the workflow usable through pasted review text, CSV exports, and an indexed fallback for the Living Spaces demo URL.
+The primary live URL target is Trustpilot because its business pages are publicly browsable and review-centric. Some public platforms, including Trustpilot, can present traffic challenges to server-side fetches. ReviewLens detects that condition and keeps the workflow usable through multiple pasted page URLs, pasted review text, CSV/JSON exports, and an indexed fallback for the Living Spaces demo URL.
 
 Accepted CSV columns include:
 
 - `rating` or `stars`
 - `body`, `review`, `text`, `content`, or `comment`
 - optional `title`, `date`, and `author`
+
+Accepted JSON imports can be either an array of review objects or an object shaped as `{ "reviews": [...] }`. Review objects may include `rating`, `stars`, `body`, `reviewBody`, `text`, `content`, `title`, `author`, `date`, and `sourceUrl`.
+
+## Multi-URL Ingestion
+
+Paste one URL per line in the Review URLs field:
+
+```text
+https://www.trustpilot.com/review/www.livingspaces.com
+https://www.trustpilot.com/review/www.livingspaces.com?page=2
+https://www.trustpilot.com/review/www.livingspaces.com?page=3
+```
+
+ReviewLens fetches each URL, extracts review data from every page it can access, deduplicates repeated reviews, and produces one combined summary/evidence set.
 
 ## Architecture
 
@@ -57,6 +71,8 @@ npm run dev
 ```
 
 Open the local URL printed by the dev server.
+
+Use `npm run dev:vercel` when testing the future Vercel-oriented Next runtime locally.
 
 ## Verification
 

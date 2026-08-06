@@ -79,6 +79,7 @@ textarea {
 }
 
 .text-input:focus,
+.text-input:focus-visible,
 .text-area:focus {
   border-color: #457b73;
   box-shadow: 0 0 0 3px rgba(69, 123, 115, 0.18);

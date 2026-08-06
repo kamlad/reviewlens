@@ -42,8 +42,15 @@ const sampleCsv = `rating,title,body,date,author
 2,Billing confusion,"Invoices were hard to reconcile and support gave conflicting answers.",2026-06-19,Jordan
 4,Useful dashboards,"Reporting is clear, but the export workflow takes too many clicks.",2026-07-02,Morgan`;
 
+function urlLines(value: string) {
+  return value
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export default function Home() {
-  const [url, setUrl] = useState("");
+  const [urls, setUrls] = useState("");
   const [rawReviews, setRawReviews] = useState("");
   const [dataset, setDataset] = useState<IngestionSummary | null>(null);
   const [ingesting, setIngesting] = useState(false);
@@ -78,7 +85,10 @@ export default function Home() {
       const response = await fetch("/api/ingest", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), rawReviews }),
+        body: JSON.stringify({
+          urls: urlLines(urls),
+          rawReviews,
+        }),
       });
       const payload = (await response.json()) as
         | IngestionSummary
@@ -168,15 +178,15 @@ export default function Home() {
           >
             <div>
               <h2 className="section-title">Ingest</h2>
-              <label className="field-label" htmlFor="url">
-                Trustpilot URL
+              <label className="field-label" htmlFor="urls">
+                Review URLs
               </label>
-              <input
-                id="url"
-                className="text-input"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://www.trustpilot.com/review/example.com"
+              <textarea
+                id="urls"
+                className="text-area h-28"
+                value={urls}
+                onChange={(event) => setUrls(event.target.value)}
+                placeholder={`https://www.trustpilot.com/review/example.com\nhttps://www.trustpilot.com/review/example.com?page=2`}
               />
             </div>
 
@@ -202,8 +212,8 @@ export default function Home() {
             <div className="quiet-box">
               <p className="metric-label">Accepted input</p>
               <p className="mt-1 text-sm text-[#4d4a43]">
-                Public Trustpilot review page, CSV with rating/body columns, or
-                pasted review blocks.
+                One or more public Trustpilot review URLs, CSV with rating/body
+                columns, JSON review exports, or pasted review blocks.
               </p>
             </div>
           </form>
