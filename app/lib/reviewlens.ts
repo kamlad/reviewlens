@@ -320,78 +320,7 @@ export function retrieveEvidence(question: string, reviews: Review[], limit = 8)
 }
 
 function isBroadPainPointQuestion(question: string) {
-  return /\b(pain points?|complaints?|issues?|problems?|negative|negatives|biggest|top|worst|risks?|friction|dissatisfaction)\b/i.test(
-    question,
-  );
-}
-
-export function isOutOfScope(question: string, dataset: Dataset) {
-  const normalized = question.toLowerCase();
-  const externalPatterns = [
-    /\bweather\b/,
-    /\bstock market\b/,
-    /\bshare price\b/,
-    /\bpresident\b/,
-    /\bnews\b/,
-    /\bcurrent events?\b/,
-    /\btoday\b/,
-    /\btomorrow\b/,
-    /\byesterday\b/,
-    /\bamazon\b/,
-    /\bgoogle maps?\b/,
-    /\bg2\b/,
-    /\bcapterra\b/,
-    /\byelp\b/,
-    /\breddit\b/,
-  ];
-
-  const platform = dataset.platform.toLowerCase();
-  const asksOtherPlatform = externalPatterns.some(
-    (pattern) => pattern.test(normalized) && !platform.match(pattern),
-  );
-  const asksWeb = /\b(web|internet|online|outside|competitor|market|industry)\b/.test(
-    normalized,
-  );
-  const asksDataset =
-    /\b(review|reviews|rating|ratings|complaint|complaints|pain point|sentiment|customer|customers|theme|themes|trend|trends|issue|issues|mention|mentions|feedback|dataset|data)\b/.test(
-      normalized,
-    );
-
-  return asksOtherPlatform || (asksWeb && !asksDataset);
-}
-
-export function fallbackAnswer(question: string, dataset: Dataset) {
-  if (isOutOfScope(question, dataset)) {
-    return {
-      declined: true,
-      citations: [],
-      answer:
-        "I can only answer using the reviews currently ingested in ReviewLens. I cannot discuss other platforms, competitors, live web facts, or general world knowledge from here.",
-    };
-  }
-
-  const evidence = retrieveEvidence(question, dataset.reviews, 6);
-  const negative = evidence.filter((review) => (review.rating ?? 5) <= 3);
-  const terms = recurringTerms(evidence)
-    .slice(0, 6)
-    .map((term) => term.term);
-
-  const answer = [
-    `Based only on the ${dataset.reviewCount} ingested ${dataset.platform} reviews for ${dataset.entityName}, the strongest signals are ${terms.length ? terms.join(", ") : "not concentrated enough to name confidently"}.`,
-    negative.length
-      ? `${negative.length} of the most relevant cited reviews are 3-star or lower, so the pain-point read should emphasize those comments.`
-      : "The most relevant cited reviews skew positive or do not include ratings, so treat negative themes as directional.",
-    evidence
-      .slice(0, 3)
-      .map((review) => `${review.id}: ${truncate(review.body, 180)}`)
-      .join("\n"),
-  ].join("\n\n");
-
-  return {
-    declined: false,
-    citations: evidence.slice(0, 6).map((review) => review.id),
-    answer,
-  };
+  return /\b(pain points?|complaints?|issues?|problems?|negative|negatives|bad reviews?|biggest|top|worst|risks?|friction|dissatisfaction|fix(?:es|ing)?|improve(?:ment|ments)?|avoid|prevent|reduce|recommend(?:ation|ations)?|priorit(?:y|ies)|future)\b/i.test(question);
 }
 
 function parseHtmlReviews(
@@ -1348,8 +1277,4 @@ function findHeader(headers: string[], candidates: string[]) {
   return headers.findIndex((header) =>
     candidates.some((candidate) => header.replace(/[^a-z]/g, "") === candidate),
   );
-}
-
-function truncate(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value;
 }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import test from "node:test";
 
 const templateRoot = new URL("../", import.meta.url);
@@ -188,4 +189,221 @@ test("ingest endpoint accepts multiple URL fields", async () => {
   assert.equal(response.status, 400);
   const payload = await response.json();
   assert.match(payload.error, /valid public URL/i);
+});
+
+test("ask endpoint requires OpenAI configuration", async () => {
+  const originalKey = process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+
+  try {
+    const response = await request("/api/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        question: "What are the top pain points?",
+        dataset: {
+          platform: "Imported data",
+          entityName: "GE dishwasher",
+          reviewCount: 1,
+          ingestionStats: { scanned: 1, succeeded: 1, failed: 0 },
+          averageRating: 1,
+          ratingDistribution: { "1": 1, "2": 0, "3": 0, "4": 0, "5": 0 },
+          dateRange: { earliest: null, latest: null },
+          recurringTerms: [],
+          warnings: [],
+          reviews: [
+            {
+              rating: 1,
+              body: "The heating element leaves dishes wet after the cycle ends.",
+            },
+          ],
+        },
+      }),
+    });
+
+    assert.equal(response.status, 503);
+    const payload = await response.json();
+    assert.match(payload.error, /OPENAI_API_KEY/i);
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalKey;
+    }
+  }
+});
+
+test("product improvement questions are answered by OpenAI with retrieved evidence", async () => {
+  const originalKey = process.env.OPENAI_API_KEY;
+  const originalBaseUrl = process.env.OPENAI_BASE_URL;
+  let capturedRequestBody;
+  const server = createServer((request, response) => {
+    assert.equal(request.url, "/responses");
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      capturedRequestBody = JSON.parse(body);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          output_text:
+            "Recommended fixes: Fix drying and heating reliability first by auditing heating-element failures and validating heated-dry performance before shipment (G002, G003).",
+        }),
+      );
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert(address && typeof address === "object");
+
+  process.env.OPENAI_API_KEY = "test-openai-key";
+  process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const response = await request("/api/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        question: "What should we fix in our product to avoid bad reviews in future?",
+        dataset: {
+          platform: "Imported data",
+          entityName: "GE dishwasher",
+          reviewCount: 4,
+          ingestionStats: { scanned: 4, succeeded: 4, failed: 0 },
+          averageRating: 3,
+          ratingDistribution: { "1": 1, "2": 1, "3": 0, "4": 0, "5": 2 },
+          dateRange: { earliest: "2026-01-01", latest: "2026-01-04" },
+          recurringTerms: [],
+          warnings: [],
+          reviews: [
+            {
+              id: "G001",
+              rating: 5,
+              title: "Quiet and dependable",
+              body:
+                "This GE dishwasher is quiet, attractive, and cleans plates and cups well.",
+            },
+            {
+              id: "G002",
+              rating: 1,
+              title: "Heating element leaves dishes wet",
+              body:
+                "The bad heating element leaves dishes wet after the cycle ends, even on heated dry.",
+            },
+            {
+              id: "G003",
+              rating: 2,
+              title: "Poor drying",
+              body:
+                "The dishwasher washes food off, but the heating element does not dry bowls, glasses, or silverware.",
+            },
+            {
+              id: "G004",
+              rating: 5,
+              title: "Excellent cleaning",
+              body:
+                "The normal cycle cleans dinner plates, coffee mugs, and utensils very well.",
+            },
+          ],
+        },
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.match(capturedRequestBody.input[0].content, /Scope Guard Enforcement/);
+    assert.match(capturedRequestBody.input[0].content, /Recommended fixes/);
+    assert.match(capturedRequestBody.input[1].content, /G002/);
+    assert.match(capturedRequestBody.input[1].content, /G003/);
+    assert.doesNotMatch(capturedRequestBody.input[1].content, /G001/);
+    assert.match(payload.answer, /Recommended fixes/i);
+    assert.match(payload.answer, /heating|wet|dry/i);
+    assert.deepEqual(payload.citations.slice(0, 2), ["G002", "G003"]);
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalKey;
+    }
+    if (originalBaseUrl === undefined) {
+      delete process.env.OPENAI_BASE_URL;
+    } else {
+      process.env.OPENAI_BASE_URL = originalBaseUrl;
+    }
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("ask endpoint reports OpenAI 429 without local fallback", async () => {
+  const originalKey = process.env.OPENAI_API_KEY;
+  const originalBaseUrl = process.env.OPENAI_BASE_URL;
+  const server = createServer((request, response) => {
+    assert.equal(request.url, "/responses");
+    request.resume();
+    response.writeHead(429, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        error: {
+          message: "You exceeded your current quota, please check your plan and billing details.",
+          type: "insufficient_quota",
+          code: "insufficient_quota",
+        },
+      }),
+    );
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert(address && typeof address === "object");
+
+  process.env.OPENAI_API_KEY = "test-openai-key";
+  process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const response = await request("/api/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        question: "What are the top pain points?",
+        dataset: {
+          platform: "Imported data",
+          entityName: "GE dishwasher",
+          reviewCount: 1,
+          ingestionStats: { scanned: 1, succeeded: 1, failed: 0 },
+          averageRating: 1,
+          ratingDistribution: { "1": 1, "2": 0, "3": 0, "4": 0, "5": 0 },
+          dateRange: { earliest: null, latest: null },
+          recurringTerms: [],
+          warnings: [],
+          reviews: [
+            {
+              id: "G001",
+              rating: 1,
+              body: "The heating element leaves dishes wet after the cycle ends.",
+            },
+          ],
+        },
+      }),
+    });
+
+    assert.equal(response.status, 429);
+    const payload = await response.json();
+    assert.match(payload.error, /rate limit|quota/i);
+    assert.match(payload.error, /billing/i);
+    assert.doesNotMatch(payload.error, /Based only on/i);
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalKey;
+    }
+    if (originalBaseUrl === undefined) {
+      delete process.env.OPENAI_BASE_URL;
+    } else {
+      process.env.OPENAI_BASE_URL = originalBaseUrl;
+    }
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
