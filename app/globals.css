@@ -1,0 +1,251 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f4ef;
+  --foreground: #171614;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.panel {
+  border: 1px solid #d7d1c4;
+  border-radius: 8px;
+  background: #fffdfa;
+  padding: 18px;
+  box-shadow: 0 18px 40px rgba(67, 55, 35, 0.08);
+}
+
+.section-title {
+  color: #6e5840;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.subhead {
+  color: #28241d;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.field-label,
+.metric-label {
+  color: #6d665c;
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.text-input,
+.text-area {
+  border: 1px solid #cfc6b4;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #171614;
+  outline: none;
+  padding: 12px;
+  width: 100%;
+}
+
+.text-area {
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.text-input:focus,
+.text-area:focus {
+  border-color: #457b73;
+  box-shadow: 0 0 0 3px rgba(69, 123, 115, 0.18);
+}
+
+.primary-button,
+.icon-button {
+  align-items: center;
+  border: 1px solid #171614;
+  border-radius: 7px;
+  background: #171614;
+  color: #ffffff;
+  display: inline-flex;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 16px;
+}
+
+.primary-button:disabled,
+.icon-button:disabled {
+  background: #b8b0a1;
+  border-color: #b8b0a1;
+  cursor: not-allowed;
+}
+
+.icon-button {
+  min-width: 68px;
+}
+
+.status-chip,
+.term-chip,
+.rating-pill,
+.review-id {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.status-chip {
+  border: 1px solid #cfc6b4;
+  background: #fffdfa;
+  color: #39342d;
+  padding: 9px 11px;
+}
+
+.term-chip {
+  background: #e8f0ed;
+  color: #24564f;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.rating-pill {
+  background: #f0e3c4;
+  color: #664a10;
+  padding: 6px 8px;
+}
+
+.review-id {
+  background: #e9e3d8;
+  color: #4b463d;
+  padding: 6px 8px;
+}
+
+.metric-box,
+.quiet-box {
+  border: 1px solid #ddd5c8;
+  border-radius: 7px;
+  background: #f9f7f1;
+  padding: 13px;
+}
+
+.rating-row {
+  align-items: center;
+  color: #4b463d;
+  display: grid;
+  font-size: 0.86rem;
+  gap: 9px;
+  grid-template-columns: 20px minmax(0, 1fr) 34px;
+}
+
+.bar-track {
+  background: #e5ded2;
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  background: #457b73;
+  border-radius: inherit;
+  height: 100%;
+  min-width: 2px;
+}
+
+.review-row {
+  border: 1px solid #e0d8ca;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 13px;
+}
+
+.empty-state {
+  align-items: center;
+  border: 1px dashed #cfc6b4;
+  border-radius: 8px;
+  color: #68635a;
+  display: flex;
+  min-height: 260px;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+}
+
+.empty-text {
+  color: #68635a;
+  font-size: 0.9rem;
+}
+
+.alert {
+  border: 1px solid #e0a19e;
+  border-radius: 7px;
+  background: #fff0ef;
+  color: #8a2d2a;
+  font-size: 0.9rem;
+  padding: 12px;
+}
+
+.chat-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 68vh;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.bubble {
+  align-self: flex-start;
+  border: 1px solid #ddd5c8;
+  border-radius: 8px;
+  background: #f9f7f1;
+  color: #302c26;
+  line-height: 1.55;
+  max-width: 92%;
+  padding: 12px 13px;
+  white-space: pre-wrap;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: #263b37;
+  border-color: #263b37;
+  color: #ffffff;
+}
+
+@media (max-width: 767px) {
+  .panel {
+    padding: 14px;
+  }
+
+  .chat-log {
+    max-height: 520px;
+  }
+}
