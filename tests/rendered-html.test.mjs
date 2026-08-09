@@ -54,8 +54,8 @@ test("server-renders the ReviewLens portal", async () => {
   assert.match(html, /<title>ReviewLens AI<\/title>/i);
   assert.match(html, /Review Intelligence Portal/);
   assert.match(html, /Review URLs/);
-  assert.match(html, /Evidence Preview/);
-  assert.match(html, /Evidence-bound Q&amp;A/);
+  assert.match(html, /Reviews/);
+  assert.match(html, /Ask/);
   assert.doesNotMatch(html, /Your site is taking shape|codex-preview/i);
 });
 
@@ -67,6 +67,9 @@ test("starter preview artifacts are removed", async () => {
   ]);
 
   assert.match(page, /ReviewLens AI/);
+  assert.match(page, /selectedRating/);
+  assert.match(page, /selectedTerm/);
+  assert.match(page, /No reviews match the selected filters/);
   assert.match(layout, /title:\s*"ReviewLens AI"/);
   assert.match(layout, /headers\(\)/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview|_sites-preview/);

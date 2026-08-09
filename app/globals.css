@@ -194,6 +194,34 @@ textarea {
   grid-template-columns: 20px minmax(0, 1fr) 34px;
 }
 
+.rating-row-filter {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  padding: 4px;
+  text-align: left;
+  width: 100%;
+}
+
+.rating-row-filter:hover,
+.rating-row-filter:focus-visible,
+.rating-row-filter.active {
+  background: #f1eee6;
+  border-color: #cfc6b4;
+  outline: none;
+}
+
+.rating-row-filter.active .bar-fill {
+  background: #263b37;
+}
+
+.rating-row-filter:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .bar-track {
   background: #e5ded2;
   border-radius: 999px;
@@ -213,6 +241,59 @@ textarea {
   border-radius: 7px;
   background: #ffffff;
   padding: 13px;
+}
+
+.term-filter {
+  appearance: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.term-filter:hover,
+.term-filter:focus-visible,
+.term-filter.active {
+  background: #d9ebe6;
+  border-color: #8bb5ad;
+  outline: none;
+}
+
+.filter-strip {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-chip,
+.clear-filter-button {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1;
+  min-height: 30px;
+  padding: 7px 10px;
+}
+
+.filter-chip {
+  border: 1px solid #8bb5ad;
+  background: #e8f0ed;
+  color: #24564f;
+}
+
+.clear-filter-button {
+  border: 1px solid #cfc6b4;
+  background: #fffdfa;
+  color: #4b463d;
+}
+
+.filter-chip:hover,
+.filter-chip:focus-visible,
+.clear-filter-button:hover,
+.clear-filter-button:focus-visible {
+  border-color: #263b37;
+  outline: none;
 }
 
 .empty-state {

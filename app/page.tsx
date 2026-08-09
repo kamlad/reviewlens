@@ -56,6 +56,8 @@ export default function Home() {
   const [ingesting, setIngesting] = useState(false);
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState("");
+  const [selectedRating, setSelectedRating] = useState<number | null>(null);
+  const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -77,6 +79,19 @@ export default function Home() {
     }));
   }, [dataset]);
 
+  const filteredReviews = useMemo(() => {
+    if (!dataset) return [];
+    return dataset.reviews.filter((review) => {
+      const matchesRating =
+        selectedRating === null ||
+        Math.round(review.rating ?? 0) === selectedRating;
+      const reviewText = `${review.title ?? ""} ${review.body}`.toLowerCase();
+      const matchesTerm =
+        selectedTerm === null || reviewText.includes(selectedTerm.toLowerCase());
+      return matchesRating && matchesTerm;
+    });
+  }, [dataset, selectedRating, selectedTerm]);
+
   async function ingest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -97,6 +112,8 @@ export default function Home() {
         throw new Error("error" in payload ? payload.error : "Ingestion failed");
       }
       setDataset(payload);
+      setSelectedRating(null);
+      setSelectedTerm(null);
       setMessages([
         {
           role: "assistant",
@@ -255,7 +272,23 @@ export default function Home() {
                 <h3 className="subhead">Rating Mix</h3>
                 <div className="mt-3 space-y-2">
                   {ratingRows.map((row) => (
-                    <div key={row.rating} className="rating-row">
+                    <button
+                      key={row.rating}
+                      type="button"
+                      className={
+                        selectedRating === row.rating
+                          ? "rating-row rating-row-filter active"
+                          : "rating-row rating-row-filter"
+                      }
+                      disabled={!dataset || row.count === 0}
+                      onClick={() =>
+                        setSelectedRating((current) =>
+                          current === row.rating ? null : row.rating,
+                        )
+                      }
+                      aria-pressed={selectedRating === row.rating}
+                      aria-label={`Filter reviews to ${row.rating}-star ratings`}
+                    >
                       <span>{row.rating}</span>
                       <div className="bar-track">
                         <div
@@ -264,7 +297,7 @@ export default function Home() {
                         />
                       </div>
                       <span>{row.count}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -274,9 +307,24 @@ export default function Home() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   {(dataset?.recurringTerms ?? []).length ? (
                     dataset?.recurringTerms.slice(0, 12).map((term) => (
-                      <span key={term.term} className="term-chip">
+                      <button
+                        key={term.term}
+                        type="button"
+                        className={
+                          selectedTerm === term.term
+                            ? "term-chip term-filter active"
+                            : "term-chip term-filter"
+                        }
+                        onClick={() =>
+                          setSelectedTerm((current) =>
+                            current === term.term ? null : term.term,
+                          )
+                        }
+                        aria-pressed={selectedTerm === term.term}
+                        aria-label={`Filter reviews containing ${term.term}`}
+                      >
                         {term.term} <b>{term.count}</b>
-                      </span>
+                      </button>
                     ))
                   ) : (
                     <span className="empty-text">Waiting for reviews</span>
@@ -298,12 +346,47 @@ export default function Home() {
                 <h3 className="subhead">Reviews</h3>
                 {dataset ? (
                   <span className="text-xs font-semibold text-[#68635a]">
-                    Showing all {dataset.reviews.length} reviews
+                    Showing {filteredReviews.length} of {dataset.reviews.length} reviews
                   </span>
                 ) : null}
               </div>
+              {dataset && (selectedRating !== null || selectedTerm !== null) ? (
+                <div className="filter-strip mt-3">
+                  <span className="metric-label m-0">Active filters</span>
+                  {selectedRating !== null ? (
+                    <button
+                      type="button"
+                      className="filter-chip"
+                      onClick={() => setSelectedRating(null)}
+                      aria-label="Remove rating filter"
+                    >
+                      {selectedRating}-star ratings
+                    </button>
+                  ) : null}
+                  {selectedTerm !== null ? (
+                    <button
+                      type="button"
+                      className="filter-chip"
+                      onClick={() => setSelectedTerm(null)}
+                      aria-label="Remove recurring term filter"
+                    >
+                      {selectedTerm}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="clear-filter-button"
+                    onClick={() => {
+                      setSelectedRating(null);
+                      setSelectedTerm(null);
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : null}
               <div className="mt-3 grid max-h-[390px] gap-3 overflow-auto pr-1">
-                {(dataset?.reviews ?? []).map((review) => (
+                {filteredReviews.map((review) => (
                   <article key={review.id} className="review-row">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="review-id">{review.id}</span>
@@ -329,6 +412,11 @@ export default function Home() {
                 {!dataset ? (
                   <div className="empty-state">
                     <p>Paste review data or load a public review URL.</p>
+                  </div>
+                ) : null}
+                {dataset && !filteredReviews.length ? (
+                  <div className="empty-state">
+                    <p>No reviews match the selected filters.</p>
                   </div>
                 ) : null}
               </div>
