@@ -163,11 +163,7 @@ export default function Home() {
               ReviewLens AI
             </h1>
           </div>
-          <div className="flex flex-wrap gap-2 text-sm">
-            <span className="status-chip">Trustpilot-first</span>
-            <span className="status-chip">Evidence-bound Q&amp;A</span>
-            <span className="status-chip">No auth</span>
-          </div>
+       
         </header>
 
         <section className="grid flex-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)_420px]">
