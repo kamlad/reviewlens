@@ -299,7 +299,7 @@ export default function Home() {
 
             <div className="mt-6">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="subhead">Evidence Preview</h3>
+                <h3 className="subhead">Reviews</h3>
                 {dataset ? (
                   <span className="text-xs font-semibold text-[#68635a]">
                     Showing all {dataset.reviews.length} reviews
