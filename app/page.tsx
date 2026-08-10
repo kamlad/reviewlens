@@ -61,6 +61,7 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
   const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
+  const [lastSubmittedUrlCount, setLastSubmittedUrlCount] = useState(0);
   const [urlIngestionNotice, setUrlIngestionNotice] = useState("");
   const [showUrlIngestionDialog, setShowUrlIngestionDialog] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -97,9 +98,16 @@ export default function Home() {
     });
   }, [dataset, selectedRating, selectedTerm]);
 
+  const visibleUrlIngestionNotice =
+    urlIngestionNotice ||
+    (dataset && hasUrlIngestionFailure(dataset, lastSubmittedUrlCount)
+      ? urlFailureNotice
+      : "");
+
   async function ingest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const submittedUrls = urlLines(urls);
+    setLastSubmittedUrlCount(submittedUrls.length);
     setError("");
     setUrlIngestionNotice("");
     setShowUrlIngestionDialog(false);
@@ -122,7 +130,7 @@ export default function Home() {
       setDataset(payload);
       setSelectedRating(null);
       setSelectedTerm(null);
-      if (hasUrlIngestionFailure(payload, submittedUrls)) {
+      if (hasUrlIngestionFailure(payload, submittedUrls.length)) {
         setUrlIngestionNotice(urlFailureNotice);
         setShowUrlIngestionDialog(true);
       }
@@ -222,8 +230,8 @@ export default function Home() {
                 }}
                 placeholder={`https://www.trustpilot.com/review/example.com\nhttps://www.trustpilot.com/review/example.com?page=2`}
               />
-              {urlIngestionNotice ? (
-                <p className="url-ingestion-warning">{urlIngestionNotice}</p>
+              {visibleUrlIngestionNotice ? (
+                <p className="url-ingestion-warning">{visibleUrlIngestionNotice}</p>
               ) : null}
             </div>
 
@@ -502,7 +510,7 @@ export default function Home() {
               URL ingestion warning
             </h2>
             <p className="mt-3 text-sm leading-6 text-[#302c26]">
-              {urlIngestionNotice}
+              {visibleUrlIngestionNotice}
             </p>
             <p className="mt-3 text-sm leading-6 text-[#4b463d]">
               The app still ingested any reviews it could access. Review the
@@ -537,8 +545,8 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function hasUrlIngestionFailure(summary: IngestionSummary, submittedUrls: string[]) {
-  if (!submittedUrls.length) return false;
+function hasUrlIngestionFailure(summary: IngestionSummary, submittedUrlCount: number) {
+  if (!submittedUrlCount) return false;
   return (
     summary.ingestionStats.failed > 0 ||
     summary.warnings.some((warning) => looksLikeUrlExtractionFailure(warning))
