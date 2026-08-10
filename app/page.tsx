@@ -108,9 +108,18 @@ export default function Home() {
     event.preventDefault();
     const submittedUrls = urlLines(urls);
     setLastSubmittedUrlCount(submittedUrls.length);
+    setDataset(null);
     setError("");
+    setSelectedRating(null);
+    setSelectedTerm(null);
     setUrlIngestionNotice("");
     setShowUrlIngestionDialog(false);
+    setMessages([
+      {
+        role: "assistant",
+        content: "Ingesting a fresh review set...",
+      },
+    ]);
     setIngesting(true);
     try {
       const response = await fetch("/api/ingest", {
@@ -128,8 +137,6 @@ export default function Home() {
         throw new Error("error" in payload ? payload.error : "Ingestion failed");
       }
       setDataset(payload);
-      setSelectedRating(null);
-      setSelectedTerm(null);
       if (hasUrlIngestionFailure(payload, submittedUrls.length)) {
         setUrlIngestionNotice(urlFailureNotice);
         setShowUrlIngestionDialog(true);
