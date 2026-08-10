@@ -41,7 +41,7 @@ ReviewLens fetches each URL, extracts review data from every page it can access,
 - `app/api/ask/route.ts`: guarded Q&A endpoint.
 - `app/lib/reviewlens.ts`: review parsing, normalization, summarization, evidence retrieval, and scope helpers.
 
-The app is built on Next/Vinext for Cloudflare Worker-compatible deployment through Sites. It has no user authentication and keeps the current dataset in browser state.
+The production deployment target is Vercel running the Next.js app. The app has no user authentication and keeps the current dataset in browser state.
 
 ## Guardrails
 
@@ -64,23 +64,53 @@ OPENAI_MODEL=gpt-4.1-mini
 
 ```bash
 npm install
-npm run dev
+npm run dev:vercel
 ```
 
 Open the local URL printed by the dev server.
 
-Use `npm run dev:vercel` when testing the future Vercel-oriented Next runtime locally.
+`npm run dev` is reserved for the Vinext/Sites runtime. Use `npm run dev:vercel` for the production-oriented Vercel/Next.js runtime.
 
 ## Verification
 
 ```bash
-npm run build
+npm run lint
 npm test
+npm run build:vercel
+npm run build
 ```
+
+`npm run build:vercel` runs `next build` and is the command Vercel should use. `npm run build` runs the Vinext build and is kept only for local compatibility with the original Sites scaffold.
 
 ## Deployment
 
-This repo includes `.openai/hosting.json` for Sites deployment. Hosted runtime variables should be configured in the Sites environment rather than committed.
+This project is intended to be deployed to Vercel as a Next.js app.
+
+The repo includes `vercel.json` so Vercel uses the correct production build:
+
+```json
+{
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build:vercel"
+}
+```
+
+Vercel project settings:
+
+- Framework Preset: Next.js
+- Install Command: `npm ci`
+- Build Command: `npm run build:vercel`
+- Output Directory: leave blank
+- Production Branch: `main`
+
+Required Vercel environment variables:
+
+```text
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+Do not commit `.env.local` or API keys. Configure runtime variables in Vercel Project Settings.
 
 ## AI Transcripts
 
