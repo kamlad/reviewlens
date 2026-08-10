@@ -107,7 +107,10 @@ export default function Home() {
   async function ingest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const submittedUrls = urlLines(urls);
+    const submittedRawReviews = rawReviews;
     setLastSubmittedUrlCount(submittedUrls.length);
+    setUrls("");
+    setRawReviews("");
     setDataset(null);
     setError("");
     setSelectedRating(null);
@@ -127,7 +130,7 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           urls: submittedUrls,
-          rawReviews,
+          rawReviews: submittedRawReviews,
         }),
       });
       const payload = (await response.json()) as
