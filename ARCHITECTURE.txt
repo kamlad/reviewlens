@@ -401,27 +401,29 @@ The app intentionally does not generate local Q&A answers when OpenAI fails.
 
 Deployment Architecture
 
-The project can be built in two ways:
+The production deployment target is Vercel running the Next.js app.
 
-1. Vinext/Sites build
+The Vercel build command is:
 
-   npm run build
+npm run build:vercel
 
-   This produces Cloudflare Worker-compatible output for Sites.
-
-2. Vercel/Next build
-
-   npm run build:vercel
-
-   This produces the standard .next output expected by Vercel.
+This runs next build and produces the standard .next output expected by Vercel.
 
 The repository includes vercel.json so Vercel uses:
 
 - installCommand: npm ci
 - buildCommand: npm run build:vercel
 
-Production environment variables should be configured in the hosting provider,
-not committed to the repository.
+Recommended Vercel project settings:
+
+- Framework Preset: Next.js
+- Install Command: npm ci
+- Build Command: npm run build:vercel
+- Output Directory: leave blank
+- Production Branch: main
+
+Production environment variables should be configured in Vercel Project
+Settings, not committed to the repository.
 
 
 Security and Privacy Notes
