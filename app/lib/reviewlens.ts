@@ -165,7 +165,7 @@ export async function ingestReviews({
 
       if (collected.length === beforeUrlReviewCount && platform === "Trustpilot") {
         warnings.push(
-          `No reviews were extracted from ${parsedUrl.toString()}. Trustpilot may have blocked backend access for that page, or the page did not contain recognizable review records.`,
+          `Paging failed for ${parsedUrl.toString()}. No reviews were extracted from this page, most likely because the review website blocked backend access with anti-scraping protections or did not expose recognizable review records. For complete ingestion, use the website's official API, a subscribed review-data API provider, or import gathered reviews using CSV or JSON.`,
         );
       }
     }

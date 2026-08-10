@@ -42,6 +42,9 @@ const sampleCsv = `rating,title,body,date,author
 2,Billing confusion,"Invoices were hard to reconcile and support gave conflicting answers.",2026-06-19,Jordan
 4,Useful dashboards,"Reporting is clear, but the export workflow takes too many clicks.",2026-07-02,Morgan`;
 
+const urlFailureNotice =
+  "Some URL pages failed to ingest. Paging most likely failed because the review website blocked backend access with anti-scraping protections. For complete ingestion, use the website's official API, a subscribed review-data API provider, or import gathered reviews using CSV or JSON.";
+
 function urlLines(value: string) {
   return value
     .split(/[\n,]+/)
@@ -58,6 +61,8 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
   const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
+  const [urlIngestionNotice, setUrlIngestionNotice] = useState("");
+  const [showUrlIngestionDialog, setShowUrlIngestionDialog] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -94,14 +99,17 @@ export default function Home() {
 
   async function ingest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submittedUrls = urlLines(urls);
     setError("");
+    setUrlIngestionNotice("");
+    setShowUrlIngestionDialog(false);
     setIngesting(true);
     try {
       const response = await fetch("/api/ingest", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          urls: urlLines(urls),
+          urls: submittedUrls,
           rawReviews,
         }),
       });
@@ -114,6 +122,10 @@ export default function Home() {
       setDataset(payload);
       setSelectedRating(null);
       setSelectedTerm(null);
+      if (hasUrlIngestionFailure(payload, submittedUrls)) {
+        setUrlIngestionNotice(urlFailureNotice);
+        setShowUrlIngestionDialog(true);
+      }
       setMessages([
         {
           role: "assistant",
@@ -121,7 +133,12 @@ export default function Home() {
         },
       ]);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Ingestion failed");
+      const message = caught instanceof Error ? caught.message : "Ingestion failed";
+      setError(message);
+      if (submittedUrls.length && looksLikeUrlExtractionFailure(message)) {
+        setUrlIngestionNotice(urlFailureNotice);
+        setShowUrlIngestionDialog(true);
+      }
     } finally {
       setIngesting(false);
     }
@@ -198,9 +215,16 @@ export default function Home() {
                 id="urls"
                 className="text-area h-28"
                 value={urls}
-                onChange={(event) => setUrls(event.target.value)}
+                onChange={(event) => {
+                  setUrls(event.target.value);
+                  setUrlIngestionNotice("");
+                  setShowUrlIngestionDialog(false);
+                }}
                 placeholder={`https://www.trustpilot.com/review/example.com\nhttps://www.trustpilot.com/review/example.com?page=2`}
               />
+              {urlIngestionNotice ? (
+                <p className="url-ingestion-warning">{urlIngestionNotice}</p>
+              ) : null}
             </div>
 
             <div>
@@ -465,6 +489,37 @@ export default function Home() {
           </section>
         </section>
       </div>
+
+      {showUrlIngestionDialog ? (
+        <div className="dialog-backdrop" role="presentation">
+          <div
+            aria-labelledby="url-ingestion-dialog-title"
+            aria-modal="true"
+            className="dialog-panel"
+            role="dialog"
+          >
+            <h2 id="url-ingestion-dialog-title" className="section-title">
+              URL ingestion warning
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-[#302c26]">
+              {urlIngestionNotice}
+            </p>
+            <p className="mt-3 text-sm leading-6 text-[#4b463d]">
+              The app still ingested any reviews it could access. Review the
+              warnings in the Summary panel to see which pages failed.
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button
+                className="primary-button"
+                onClick={() => setShowUrlIngestionDialog(false)}
+                type="button"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -479,5 +534,19 @@ function Metric({ label, value }: { label: string; value: string | number }) {
         {value}
       </p>
     </div>
+  );
+}
+
+function hasUrlIngestionFailure(summary: IngestionSummary, submittedUrls: string[]) {
+  if (!submittedUrls.length) return false;
+  return (
+    summary.ingestionStats.failed > 0 ||
+    summary.warnings.some((warning) => looksLikeUrlExtractionFailure(warning))
+  );
+}
+
+function looksLikeUrlExtractionFailure(message: string) {
+  return /paging failed|blocked backend|anti-scraping|no reviews were extracted|http 403|traffic challenge|bot/i.test(
+    message,
   );
 }

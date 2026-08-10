@@ -70,6 +70,9 @@ test("starter preview artifacts are removed", async () => {
   assert.match(page, /selectedRating/);
   assert.match(page, /selectedTerm/);
   assert.match(page, /No reviews match the selected filters/);
+  assert.match(page, /Some URL pages failed to ingest/);
+  assert.match(page, /URL ingestion warning/);
+  assert.match(page, /anti-scraping protections/);
   assert.match(layout, /title:\s*"ReviewLens AI"/);
   assert.match(layout, /headers\(\)/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview|_sites-preview/);
